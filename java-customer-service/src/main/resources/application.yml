@@ -1,0 +1,30 @@
+server:
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  port: ${SERVER_PORT:8080}
+  servlet:
+    session:
+      timeout: 60m
+      cookie:
+        http-only: true
+        same-site: strict
+spring:
+  application:
+    name: airline-customer-service
+  threads:
+    virtual:
+      enabled: true
+  ai:
+    deepseek:
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+    retry:
+      max-attempts: 1
+airline:
+  model: ${DEEPSEEK_MODEL:deepseek-v4-flash}
+  max-model-steps: 16
+  max-tool-calls: 24
+  max-handoffs: 8
+  turn-timeout: 120s
+  model-timeout: 40s
+  session-ttl: 60m
+  max-sessions: 500

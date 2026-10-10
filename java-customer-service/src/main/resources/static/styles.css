@@ -1,0 +1,51 @@
+:root { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #172033; background: #f0f4f9; color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 22px 28px; color: white; background: #14335d; }
+h1 { font-size: 24px; margin: 0; }
+header p { margin: 6px 0 0; color: #c3d8f1; font-size: 13px; }
+.demo-badge { background: #fef3c7; color: #854d0e; border-radius: 20px; padding: 8px 14px; font-size: 12px; }
+main { display: grid; grid-template-columns: minmax(280px, 36%) minmax(0, 1fr); gap: 18px; max-width: 1500px; padding: 22px; margin: auto; align-items: start; }
+section { padding: 20px; margin-bottom: 16px; background: white; border: 1px solid #dce4f0; border-radius: 14px; box-shadow: 0 3px 12px #14335d06; }
+h2 { font-size: 16px; margin: 0 0 15px; }
+small, .hint { color: #526581; font-size: 12px; font-weight: normal; line-height: 1.7; }
+button, select, textarea { font: inherit; }
+button { background: #1e5bd6; color: white; border: 0; border-radius: 8px; cursor: pointer; padding: 10px 14px; font-size: 13px; }
+button:hover:not(:disabled) { filter: brightness(.94); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.secondary { color: #244878; background: #e9f0fb; }
+select { width: 100%; border: 1px solid #bac9db; padding: 10px; border-radius: 8px; margin: 8px 0 12px; background: white; }
+label, #connection, #run-status { font-size: 12px; color: #526581; }
+.controls, .section-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.section-heading h2 { margin: 0; }
+#notice { padding: 0 24px; color: #9c2d1a; min-height: 0; }
+#notice:not(:empty) { padding: 12px 24px; background: #fff2e8; }
+.agents { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.agent { border: 1px solid #dfe6f1; padding: 10px; border-radius: 8px; font-size: 13px; }
+.agent.active { color: #184dba; background: #edf4ff; border-color: #6799f0; font-weight: 600; }
+dl { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 8px 14px; font-size: 13px; margin: 0; }
+dt { color: #526581; } dd { margin: 0; overflow-wrap: anywhere; }
+.guardrail { padding: 8px 0; font-size: 12px; border-bottom: 1px solid #edf1f6; }
+.PASSED { color: #13734b; } .REJECTED, .ERROR { color: #b43523; }
+.events { max-height: 340px; overflow-y: auto; }
+.event { font-size: 12px; line-height: 1.6; border-bottom: 1px solid #edf1f6; padding: 8px 0; overflow-wrap: anywhere; }
+.event strong { color: #426186; }
+.suggestions { display: flex; flex-wrap: wrap; gap: 8px; }
+.suggestions button { background: #edf3fc; color: #315a99; }
+.messages { min-height: 240px; max-height: 500px; overflow-y: auto; padding: 16px 0; }
+.message { margin: 12px 0; border-radius: 12px; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.7; background: #f0f4f9; max-width: 94%; }
+.message.user { margin-left: auto; background: #e8efff; color: #21477f; }
+form { display: flex; gap: 10px; align-items: stretch; }
+textarea { width: 100%; resize: vertical; border: 1px solid #bac9db; border-radius: 10px; padding: 12px; font-size: 14px; }
+.operation { padding: 14px; border: 1px solid #ecd7a5; border-radius: 10px; background: #fffaf0; margin: 10px 0; font-size: 13px; overflow-wrap: anywhere; }
+.operation pre { white-space: pre-wrap; font-size: 12px; }
+.seat-row { display: flex; justify-content: center; gap: 6px; margin: 5px 0; align-items: center; }
+.row-label { width: 30px; font-size: 12px; color: #64748b; }
+.seat { padding: 0; width: 40px; height: 34px; background: #e4effd; color: #285780; font-size: 12px; }
+.seat.occupied { background: #dde2e9; color: #727c8e; }
+.seat.selected { background: #15926b; color: white; }
+.seat.exit { border: 2px solid #e7bb41; }
+.seat.aisle { margin-right: 18px; }
+.cabin-title { color: #526581; font-size: 12px; text-align: center; padding: 12px 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+@media (max-width: 800px) { main { grid-template-columns: 1fr; padding: 12px; } header { padding: 18px; flex-wrap: wrap; } aside { order: 2; } article { order: 1; } .seat { width: 32px; } }

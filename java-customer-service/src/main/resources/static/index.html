@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DeepSeek 航空客服</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header>
+    <div><h1>DeepSeek 航空客服</h1><p>Spring Boot 4.1.1 · Spring AI 2.0.1 · 六 Agent 协作</p></div>
+    <span class="demo-badge">演示系统 · 不执行真实订票</span>
+  </header>
+  <div id="notice" role="status" aria-live="polite"></div>
+  <main>
+    <aside>
+      <section>
+        <h2>会话与场景</h2>
+        <label for="scenario">新会话演示航程</label>
+        <select id="scenario">
+          <option value="disrupted">延误：巴黎 → 纽约 → 奥斯汀</option>
+          <option value="on_time">准点：旧金山 → 洛杉矶</option>
+        </select>
+        <div class="controls"><button id="new-thread">创建新会话</button><button id="delete-thread" class="secondary">删除当前会话</button></div>
+        <p id="connection">正在初始化…</p>
+      </section>
+      <section><h2>Agent 运行状态</h2><div id="agents" class="agents"></div><p id="run-status"></p></section>
+      <section><h2>演示业务状态</h2><dl id="context"></dl></section>
+      <section><h2>输入检查</h2><div id="guardrails"></div></section>
+      <section><h2>运行事件 <small>最近 300 条</small></h2><div id="events" class="events"></div></section>
+    </aside>
+    <article>
+      <section class="chat-section">
+        <h2>客户对话</h2>
+        <div class="suggestions">
+          <button data-prompt="请查询我的航班状态，并提供延误后的替代航班。">查询航班</button>
+          <button data-prompt="我想改到 NY950，请帮我申请演示改签。">改签 NY950</button>
+          <button data-prompt="我想看座位图并换座位。">查看座位</button>
+          <button data-prompt="我的航程延误了，请查询补偿政策并申请酒店和餐食凭证。">申请补偿</button>
+          <button data-prompt="我想取消当前演示预订。">取消预订</button>
+          <button data-prompt="Wi-Fi 和行李政策是什么？">政策问答</button>
+        </div>
+        <div id="messages" class="messages" aria-live="polite"></div>
+        <form id="chat-form">
+          <label class="sr-only" for="message">客服消息</label>
+          <textarea id="message" rows="3" maxlength="4000" placeholder="描述您的航空服务需求，或点击上方示例…" required></textarea>
+          <button id="send" type="submit">发送</button>
+        </form>
+        <p class="hint">模型处理期间可实时查看左侧事件。写操作需要在下方确认，聊天中的“OK”不会替代操作授权。</p>
+      </section>
+      <section><h2>待确认演示操作</h2><div id="operations"></div></section>
+      <section>
+        <div class="section-heading"><h2>互动座位图</h2><button id="open-seats" class="secondary">打开 / 刷新</button></div>
+        <p class="hint">136 座：商务舱 16、优选经济舱 24、经济舱 96。灰色为占用，绿色为当前座位；后端再次校验。</p>
+        <div id="seat-status"></div><div id="seat-map"></div>
+      </section>
+    </article>
+  </main>
+</body>
+</html>

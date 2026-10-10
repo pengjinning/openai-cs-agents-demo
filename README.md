@@ -40,16 +40,28 @@ Install the dependencies for the backend by running the following commands:
 
 ```bash
 cd python-backend
-python -m venv .venv
+# python3 -m venv .venv
+# source .venv/bin/activate
+# pip install -r requirements.txt
+
+# deactivate
+# mv .venv .venv-python39
+
+# 创建 Python 3.12 环境并安装依赖
+uv venv --python 3.12 .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+uv pip install -r requirements.txt
+# 
+python --version
+python -c "from chatkit.server import StreamingResult; print('ChatKit OK')"
+python -m uvicorn main:app --reload --port 8000
 ```
 
 For the UI, you can run:
 
 ```bash
 cd ui
-npm install
+npm run install
 ```
 
 ### Run the app
