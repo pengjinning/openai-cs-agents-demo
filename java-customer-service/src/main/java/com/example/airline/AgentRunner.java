@@ -29,15 +29,17 @@ public class AgentRunner {
     private final InputChecks checks;
     private final EventHub events;
     private final AirlineProperties properties;
+    private final HumanSupport humanSupport;
 
     public AgentRunner(AgentCatalog catalog, BusinessTools tools, ModelGateway model, InputChecks checks,
-                       EventHub events, AirlineProperties properties) {
+                       EventHub events, AirlineProperties properties, HumanSupport humanSupport) {
         this.catalog = catalog;
         this.tools = tools;
         this.model = model;
         this.checks = checks;
         this.events = events;
         this.properties = properties;
+        this.humanSupport = humanSupport;
     }
 
     public Reply respond(Conversation conversation, String requestId, String text) {
@@ -52,11 +54,16 @@ public class AgentRunner {
                     }
                     return conversation.requests.get(requestId);
                 }
+                HumanSupport.requireAutomated(conversation);
                 if (conversation.messages.size() >= 120 || conversation.history.size() >= 600) {
                     throw new ApiException(409, "HISTORY_LIMIT", "演示历史达到上限，请创建新会话");
                 }
                 conversation.runId = UUID.randomUUID().toString();
                 conversation.runStatus = "RUNNING";
+                conversation.insights = null;
+                conversation.suggestedQuestions = List.of();
+                conversation.currentSourceIds.clear();
+                conversation.humanRecommended = false;
                 conversation.guardrails = List.of(
                         new Conversation.Guardrail("Relevance Guardrail", "NOT_RUN", ""),
                         new Conversation.Guardrail("Jailbreak Guardrail", "NOT_RUN", ""));
@@ -66,7 +73,8 @@ public class AgentRunner {
             events.record(conversation, "run_started", "开始处理消息", Map.of("requestId", requestId));
             Instant deadline = Instant.now().plus(properties.turnTimeout());
             try {
-                List<Conversation.Guardrail> guardrails = checks.check(text, timeout(deadline));
+                InputChecks.Outcome outcome = checks.check(text, timeout(deadline));
+                List<Conversation.Guardrail> guardrails = outcome.guardrails();
                 synchronized (conversation) {
                     conversation.guardrails = guardrails;
                 }
@@ -79,14 +87,29 @@ public class AgentRunner {
                             "抱歉，我只能处理航空客服相关的正常请求，无法绕过规则或泄露系统指令。");
                 }
                 synchronized (conversation) {
+                    conversation.insights = outcome.insights();
+                    conversation.humanRecommended = Set.of("negative", "frustrated").contains(outcome.insights().mood());
                     conversation.history.add(new UserMessage(text));
+                }
+                events.record(conversation, "service_insights", "咨询信息已整理", Map.of());
+                if (outcome.insights().humanRequested()) {
+                    HumanSupport.Case supportCase = humanSupport.request(conversation, "客户明确申请人工服务");
+                    return finish(conversation, requestId, text, "COMPLETED",
+                            "已登记演示人工服务申请 " + supportCase.id()
+                                    + "，尚未接通真人。智能服务已暂停，您可以查看申请或恢复智能服务。");
                 }
                 return run(conversation, requestId, text, deadline);
             } catch (ApiException exception) {
                 LOG.warn("Agent run {} ended with {}", conversation.runId, exception.code());
+                synchronized (conversation) {
+                    conversation.humanRecommended = true;
+                }
                 return finish(conversation, requestId, text, "FAILED", exception.getMessage());
             } catch (RuntimeException exception) {
                 LOG.error("Agent run {} failed ({})", conversation.runId, exception.getClass().getSimpleName());
+                synchronized (conversation) {
+                    conversation.humanRecommended = true;
+                }
                 return finish(conversation, requestId, text, "FAILED",
                         "客服执行失败，已完成的演示操作仍保留；请查询最新状态，不要重复提交整轮操作。");
             }
@@ -111,7 +134,7 @@ public class AgentRunner {
             }
             List<ToolDefinition> definitions = new ArrayList<>();
             agent.tools().forEach(name -> definitions.add(tools.get(name).definition()));
-            definitions.add(tools.get("transfer_to_agent").definition());
+            definitions.add(catalog.handoffDefinition(agent.id()));
             events.record(conversation, "progress", "正在调用 " + agent.name(), Map.of("step", step + 1));
             AssistantMessage response = model.complete(messages, definitions, timeout(deadline));
             if (!response.hasToolCalls()) {
@@ -144,6 +167,13 @@ public class AgentRunner {
                 Map<String, String> args = Json.arguments(call.arguments());
                 tools.get(call.name()).validate(args);
                 if (handoff && !agent.handoffs().contains(args.get("target"))) {
+                    String requested = catalog.all().stream().map(AgentCatalog.Agent::id)
+                            .filter(id -> id.equals(args.get("target"))).findFirst().orElse("unknown");
+                    LOG.warn("Rejected handoff for run {} from {} to {}; allowed targets: {}",
+                            conversation.runId, agent.id(), requested, agent.handoffs());
+                    events.record(conversation, "handoff_rejected", "客服转接目标不符合当前服务权限",
+                            Map.of("sourceAgent", agent.id(), "requestedTarget", requested,
+                                    "allowedTargets", agent.handoffs()));
                     throw new ApiException(502, "HANDOFF_FORBIDDEN", "模型请求了不允许的交接目标");
                 }
                 arguments.add(args);
@@ -208,7 +238,10 @@ public class AgentRunner {
     private Reply finish(Conversation conversation, String requestId, String text, String status, String message) {
         synchronized (conversation) {
             conversation.runStatus = status;
-            conversation.messages.add(new Conversation.ChatEntry("assistant", message));
+            conversation.pending.entrySet().removeIf(entry -> entry.getValue().expiresAt().isBefore(Instant.now()));
+            conversation.suggestedQuestions = ServiceInsights.suggestions(conversation);
+            conversation.messages.add(new Conversation.ChatEntry("assistant", message,
+                    List.copyOf(conversation.currentSourceIds), conversation.insights, conversation.suggestedQuestions));
             conversation.touchedAt = Instant.now();
             Reply reply = new Reply(requestId, conversation.runId, status, message);
             conversation.requests.put(requestId, reply);

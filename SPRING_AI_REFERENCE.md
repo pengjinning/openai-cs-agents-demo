@@ -8,19 +8,20 @@
 
 - **第 2–9 节：基础版**，保留 OpenAI Agents JS 三 Agent CLI 示例的语义。
 - **第 10–18 节：增强版**，基于当前 `openai-cs-agents-demo` 的六 Agent 后端及前端源码，给出 Java 项目的完善规格。
+- **第 19–22 节：服务体验增强**，参考 Claude 客服 demo，补齐可追溯政策来源、咨询标签、后续问题与人工服务申请。
 - 完善已有客服项目时，以增强版为目标；第 8 节任务说明仅适用于最小复刻，不应继续限制增强版为三个角色、两个工具。
 
 主要依据：
 
-- [index.ts](./index.ts)：三个 Agent、两个业务工具、交接关系和 CLI 会话循环。
-- [README.md](./README.md)：基础示例定位与运行说明。
-- [result.ts](../../packages/agents-core/src/result.ts)：`history`、`output`、`newItems` 和 `lastAgent` 的 SDK 语义。
-- [handoff.ts](../../packages/agents-core/src/handoff.ts)：交接通过工具表达，默认向目标 Agent 提供完整对话历史。
-- [handoffPrompt.ts](../../packages/agents-core/src/extensions/handoffPrompt.ts)：多 Agent 系统提示词前缀。
-- [server.py](../../../openai-cs-agents-demo/python-backend/server.py)、[main.py](../../../openai-cs-agents-demo/python-backend/main.py)：增强版会话、流式响应、事件与 HTTP 入口。
-- [agents.py](../../../openai-cs-agents-demo/python-backend/airline/agents.py)、[tools.py](../../../openai-cs-agents-demo/python-backend/airline/tools.py)：六 Agent 的实际工具权限与交接图。
-- [context.py](../../../openai-cs-agents-demo/python-backend/airline/context.py)、[demo_data.py](../../../openai-cs-agents-demo/python-backend/airline/demo_data.py)、[guardrails.py](../../../openai-cs-agents-demo/python-backend/airline/guardrails.py)：业务状态、演示航程与输入检查。
-- [page.tsx](../../../openai-cs-agents-demo/ui/app/page.tsx)、[chatkit-panel.tsx](../../../openai-cs-agents-demo/ui/components/chatkit-panel.tsx)、[types.ts](../../../openai-cs-agents-demo/ui/lib/types.ts)：当前界面接线与状态数据契约。
+- [index.ts](../openai-agents-js/examples/customer-service/index.ts)：三个 Agent、两个业务工具、交接关系和 CLI 会话循环。
+- [README.md](../openai-agents-js/examples/customer-service/README.md)：基础示例定位与运行说明。
+- [result.ts](../openai-agents-js/packages/agents-core/src/result.ts)：`history`、`output`、`newItems` 和 `lastAgent` 的 SDK 语义。
+- [handoff.ts](../openai-agents-js/packages/agents-core/src/handoff.ts)：交接通过工具表达，默认向目标 Agent 提供完整对话历史。
+- [handoffPrompt.ts](../openai-agents-js/packages/agents-core/src/extensions/handoffPrompt.ts)：多 Agent 系统提示词前缀。
+- [server.py](python-backend/server.py)、[main.py](python-backend/main.py)：增强版会话、流式响应、事件与 HTTP 入口。
+- [agents.py](python-backend/airline/agents.py)、[tools.py](python-backend/airline/tools.py)：六 Agent 的实际工具权限与交接图。
+- [context.py](python-backend/airline/context.py)、[demo_data.py](python-backend/airline/demo_data.py)、[guardrails.py](python-backend/airline/guardrails.py)：业务状态、演示航程与输入检查。
+- [page.tsx](ui/app/page.tsx)、[chatkit-panel.tsx](ui/components/chatkit-panel.tsx)、[types.ts](ui/lib/types.ts)：当前界面接线与状态数据契约。
 
 跨仓库相对链接要求两个 checkout 同处一个父目录。将本文复制到 Java 项目后，正文可独立使用，源码链接需要相应调整。增强版结论来自当前工作区源码静态核对，不代表已经执行真实模型、航空后台或 Java 集成测试。
 
@@ -30,7 +31,7 @@
 2. **迁移建议**：Java 项目为保持同类行为可以采用的设计，并非原代码已有功能。
 3. **生产扩展**：示例没有实现，不应在复刻阶段冒充已完成的能力。
 
-本文没有验证某个特定 Spring AI 版本的 API。`ChatClient`、`@Tool`、`ToolContext`、`ChatMemory` 等是候选映射；编码 Agent 必须先检查目标项目的依赖版本、现有封装和实际可用 API，再决定具体写法。
+第1–18节保留版本无关的迁移设计，`ChatClient`、`@Tool`、`ToolContext`、`ChatMemory` 等是候选映射。当前 [Java 项目](java-customer-service/README.md) 已使用 Spring Boot 4.1.1、Spring AI 2.0.1 与官方 DeepSeek starter，验证 `DeepSeekChatModel`、host-controlled ToolCallback schema 和工具历史往返；不要把候选映射理解为本项目已使用的全部 API。
 
 ## 2. 一句话理解系统
 
@@ -456,7 +457,7 @@ Spring AI 工具自动执行和多 Agent 交接编排是两件事。若自动工
 
 ### 10.2 六 Agent 的真实权限与交接图
 
-以下以 [agents.py](../../../openai-cs-agents-demo/python-backend/airline/agents.py) 注册配置为准，名称用于诊断；Java 内部建议使用稳定 ID，不把展示名称作为持久化主键。
+以下以 [agents.py](python-backend/airline/agents.py) 注册配置为准，名称用于诊断；Java 内部建议使用稳定 ID，不把展示名称作为持久化主键。
 
 | Agent 展示名称 | 建议 Java ID | 已注册业务工具 | 实际允许交接目标 |
 | --- | --- | --- | --- |
@@ -497,7 +498,7 @@ Java 应明确：
 
 ### 11.1 状态分层
 
-[server.py](../../../openai-cs-agents-demo/python-backend/server.py) 的 `ConversationState` 包含：
+[server.py](python-backend/server.py) 的 `ConversationState` 包含：
 
 | 字段 | 作用 | Java 对应职责 |
 | --- | --- | --- |
@@ -548,7 +549,7 @@ ConversationState
 
 ### 11.3 演示航程与补全边界
 
-[demo_data.py](../../../openai-cs-agents-demo/python-backend/airline/demo_data.py) 定义两个固定场景：
+[demo_data.py](python-backend/airline/demo_data.py) 定义两个固定场景：
 
 | 场景 | 航程与确认号 | 演示结果 |
 | --- | --- | --- |
@@ -591,7 +592,7 @@ Java 演示应固定 fixture 和明确的场景选择入口；不得把不相关
 
 ### 12.2 FAQ 两版行为不能混用
 
-增强版 [tools.py](../../../openai-cs-agents-demo/python-backend/airline/tools.py) 的优先级是：
+增强版 [tools.py](python-backend/airline/tools.py) 的优先级是：
 
 1. `bag` / `baggage`：行李规则及丢失行李申报建议。
 2. `compensation` / `delay` / `voucher`：演示延误关怀和补偿政策。
@@ -632,7 +633,7 @@ ToolResult
 
 ### 13.1 先确定工具执行控制权
 
-没有目标 Java 项目的依赖文件，本文不提供声称可编译的 Spring AI API 调用。实现前必须核对 BOM、Java/Spring Boot/Spring AI 版本、模型供应商、工具调用模式、流式能力与现有 memory/advisor。
+迁移设计不以伪代码代替编译验证。当前依赖见 [pom.xml](java-customer-service/pom.xml)，实际适配见 [DeepSeekGateway.java](java-customer-service/src/main/java/com/example/airline/DeepSeekGateway.java)；更换版本或供应商前仍须核对 BOM、工具调用模式、流式能力与 memory/advisor。
 
 | 控制点 | Java 宿主需要保证 | 不可默认假设 |
 | --- | --- | --- |
@@ -685,7 +686,7 @@ handoff 初始化在 Java 中应显式注册回调并记录为 `handoff_prepare`
 
 ### 14.1 当前 guardrail 的实际语义
 
-[guardrails.py](../../../openai-cs-agents-demo/python-backend/airline/guardrails.py) 用独立模型生成结构化判断：
+[guardrails.py](python-backend/airline/guardrails.py) 用独立模型生成结构化判断：
 
 | 检查                | 输出                       | 拒绝条件            |
 | ------------------- | -------------------------- | ------------------- |
@@ -714,7 +715,7 @@ Java 在宿主明确提取本轮用户文本，避免历史中的旧拒绝污染
 
 ### 15.1 当前 HTTP 接口
 
-[main.py](../../../openai-cs-agents-demo/python-backend/main.py) 提供：
+[main.py](python-backend/main.py) 提供：
 
 | 接口 | 当前用途 | Java 迁移注意 |
 | --- | --- | --- |
@@ -796,16 +797,16 @@ ChatKit 输出的三个 effect：
 
 ### 16.1 当前 UI 实际接线
 
-当前 [page.tsx](../../../openai-cs-agents-demo/ui/app/page.tsx)：
+当前 [page.tsx](ui/app/page.tsx)：
 
 - bootstrap 后设置 thread、Agent 列表及 context。
 - thread 变化和聊天响应结束时请求完整状态快照。
 - 没有建立 `EventSource` 订阅 `/chatkit/state/stream`。
 - 没有传入 ChatKitPanel 的 `onRunnerUpdate` 和 `onRunnerEventDelta` 回调。
 
-[chatkit-panel.tsx](../../../openai-cs-agents-demo/ui/components/chatkit-panel.tsx) 的 effect 回调只解构 `name`，却通过箭头函数的 `arguments` 读取 data，并未显式读取当前 effect 的 `data`；不能保证增量和绑定通知实际处理正确。
+[chatkit-panel.tsx](ui/components/chatkit-panel.tsx) 的 effect 回调只解构 `name`，却通过箭头函数的 `arguments` 读取 data，并未显式读取当前 effect 的 `data`；不能保证增量和绑定通知实际处理正确。
 
-[agent-panel.tsx](../../../openai-cs-agents-demo/ui/components/agent-panel.tsx) 展示 Agent、公开 context、检查和 Runner，过滤 `message`、`progress_update`。因此后端有实时广播能力，不等于当前 Agent View 已实现实时展示。
+[agent-panel.tsx](ui/components/agent-panel.tsx) 展示 Agent、公开 context、检查和 Runner，过滤 `message`、`progress_update`。因此后端有实时广播能力，不等于当前 Agent View 已实现实时展示。
 
 Java 配套 UI 至少选择并完成一种状态更新方式：
 
@@ -816,7 +817,7 @@ Java 配套 UI 至少选择并完成一种状态更新方式：
 
 ### 16.2 座位图不是已完成的闭环
 
-当前 `display_seat_map` 只返回 `DISPLAY_SEAT_MAP`；[seat-map.tsx](../../../openai-cs-agents-demo/ui/components/seat-map.tsx) 定义了组件，但没有其他组件引用，server 的 `action` 也是空实现。因此不能按 README 推导已经支持“点击座位 → 后端修改 → 确认”。
+当前 Python `display_seat_map` 只返回 `DISPLAY_SEAT_MAP`；[seat-map.tsx](ui/components/seat-map.tsx) 定义了组件，但没有其他组件引用，server 的 `action` 也是空实现。因此不能按 Python README 推导已经支持“点击座位 → 后端修改 → 确认”；独立 Java 页面已实现这个闭环。
 
 固定图布局为：
 
@@ -930,3 +931,84 @@ display_seat_map
 - 执行最小覆盖范围的既有测试、编译/类型检查和必要前端联调。
 - 提供实际运行结果；未执行真实模型/外部后台验证要明确列出。
 ```
+
+## 19. Claude 客服 demo 的实际机制与借鉴范围
+
+本轮依据本机 [customer-support-agent](../claude-quickstarts/customer-support-agent/) 的实际实现，而非只读取功能宣传：
+
+| 参考源码 | 实际实现 | Java 借鉴方式 |
+| --- | --- | --- |
+| [聊天入口](../claude-quickstarts/customer-support-agent/app/api/chat/route.ts) | 返回结构化回答、情绪、咨询分类、建议问题与人工转接建议；使用 Zod 校验 | 保留现有工具编排，单独校验服务标签，避免把控制指令混进最终聊天文本 |
+| [检索工具](../claude-quickstarts/customer-support-agent/app/lib/utils.ts) | 调用 Bedrock Retrieve，默认请求3条；上下文使用所有返回文本，展示 sources 最后只保留1条 | 本地政策库检索，返回全部实际命中来源；不引入 AWS 或假称向量 RAG |
+| [聊天组件](../claude-quickstarts/customer-support-agent/components/ChatArea.tsx) | 读取 JSON，展示建议问题；“Talk to a human”仅触发浏览器事件；打字动画不是 token SSE | 真正的后端申请单与状态接口，前端可查询；继续使用现有状态 SSE |
+| [来源栏](../claude-quickstarts/customer-support-agent/components/RightSidebar.tsx) | 根据模型 `context_used` 展示最多15次历史、来源片段与 score | 根据真实工具检索结果记录来源历史，不依赖模型自称已使用资料 |
+| [来源弹窗](../claude-quickstarts/customer-support-agent/components/FullSourceModal.tsx) | 展示传入 snippet，名称“Full Source”不表示另行读取了完整文档 | 按来源 ID 从受控 API 读取本地完整政策条目 |
+| [左侧栏](../claude-quickstarts/customer-support-agent/components/LeftSidebar.tsx) | 展示 thinking、情绪及分类 | 只展示公开服务标签和事实进展，不展示隐藏推理过程 |
+
+参考实现中的 `context_used` 是模型声明，不是引用验证；检索失败可返回空结果继续回答、header ASCII 过滤可能破坏中文来源、浏览器事件不代表真人已接通。Java 不复制这些边界，也不启用未经消毒的原始 HTML 渲染。
+
+## 20. 本轮批准的 Java 实施规格
+
+继续使用 Spring Boot 4.1.1、Spring AI 2.0.1 DeepSeek 和“微语航空客服”；不换成 Claude，不新建另一套前端，不接入 AWS、数据库或真实坐席平台。
+
+### 20.1 可追溯本地政策库
+
+- FAQ 工具改为调用本地政策目录，条目包含稳定 ID、标题、版本、业务分类、关键词及完整正文。
+- 中文、英文、Wi-Fi 归一化与复合问题保留；所有命中条目都返回来源，未知政策明确 NOT_FOUND。
+- 这是确定性关键词检索，不是向量搜索；不展示虚构相似度百分比。
+- 航机座位政策与座位图共用布局事实，补偿金额仍明确标记演示。
+- `KnowledgeLookup` 记录 runId、检索问题、时间及命中来源；每会话保留15次。
+- `ChatEntry` 增加本条回复所对应的 source IDs；资料已检索不代表已证明最终回复逐句使用资料，UI 使用“查询到的参考资料”。
+- 来源详情 API 只接受实际目录 ID，且该会话必须曾命中该来源；禁止模型生成任意 URL/文件路径。
+
+### 20.2 咨询标签与后续问题
+
+- 在现有最新消息相关性检查中同时生成 mood、categories、humanRequested，不增加一次额外模型调用。
+- mood 只接受 positive、neutral、negative、curious、frustrated、confused；分类只接受 flight、booking、seat、policy、baggage、compensation、human。
+- 缺字段、类型错误、未知枚举视为检查错误，不静默补默认通过。标签是可误判的辅助信息，不是授权依据或心理诊断。
+- 人工意愿仅来自明确申请，单纯负面情绪只建议人工，不自动登记；直接按钮不依赖模型判断。
+- 建议问题由服务端根据本轮标签、预订状态及待确认操作生成，最多3个；取消后不推荐改签/选座，补偿已发放后不推荐重复申请。
+- 当前回复与历史回复携带各自标签及来源；新轮次清空当前标签与建议，避免旧结果覆盖新轮次。
+
+### 20.3 人工服务申请闭环
+
+- 新增 `HumanSupportCase`：申请号、REQUESTED/CANCELLED、原因、登记时间、最近对话片段摘要。
+- 这是演示申请登记，不是已经接通真人、不承诺排队时长；页面明确说明。
+- 客户点击申请或模型检查确认客户明确要求人工时，可登记申请；重复申请返回当前单，不重复建单。
+- REQUESTED 期间暂停智能聊天和业务写入，清理未执行的待确认操作；已有成功业务结果保留。
+- “恢复智能服务”将当前申请置为 CANCELLED、返回智能模式并重置到分诊；旧申请仍可查询，最多保留8单。
+- 登记和恢复与聊天/选座/确认共用会话执行锁，校验 owner/CSRF，更新 snapshot 与事件。
+- 未知知识或复杂失败可建议人工，不能直接假称转接成功。
+- 人工摘要只取公开客户对话，不包含系统提示词、工具参数、医疗备注或内部模型历史。
+
+## 21. API 与界面增量契约
+
+保留已有接口与字段，在 snapshot / ChatEntry 中增加结构化服务标签、后续问题、政策来源历史及人工申请历史：
+
+| 增量入口 | 行为 |
+| --- | --- |
+| `GET /api/threads/{id}/knowledge/{sourceId}` | 校验归属和实际检索记录后返回完整政策 |
+| `POST /api/threads/{id}/human-support` | 带 reason，登记或返回当前人工申请；暂停自动服务 |
+| `POST /api/threads/{id}/human-support/resume` | 取消当前申请、恢复智能服务，重复恢复不重复记录 |
+
+页面增加“咨询概况”“参考资料”“接下来可以问”和“人工服务”区，保留微语品牌，不展示模型/框架版本、内部分类 ID、工具 schema 或思考过程。正文及来源使用 textContent，来源弹窗支持关闭与 Escape；历史按当前 thread 隔离，SSE重连只同步服务端快照。
+
+## 22. 本轮验收要求
+
+| 场景 | 结果 |
+| --- | --- |
+| 中英文复合政策查询 | 返回全部命中来源，来源 ID、版本、正文可验证 |
+| 未知政策 | NOT_FOUND、空来源、建议人工，不假装知识命中 |
+| 详情访问 | 本会话查到的来源可读；跨会话/未检索/任意路径拒绝 |
+| 无效情绪/分类结果 | 检查 ERROR，本轮零工具/业务写操作 |
+| 负面但未申请人工 | 只显示人工建议，不自动建单 |
+| 明确人工请求 | 登记申请、暂停自动执行、无真人接通宣称 |
+| 重复申请与恢复 | 单号稳定，恢复不重复追加事件/消息 |
+| 已确认改签后申请人工 | 改签保留，待确认操作清理，不重复改签 |
+| 人工模式中的聊天/选座/确认 | 明确拒绝，并不调用 DeepSeek 或执行写操作 |
+| 恢复智能服务 | 分诊继续，历史和来源保留，无旧待确认操作 |
+| 来源和建议历史 | 新轮次、刷新、重连、切换 thread 不串数据 |
+| UI 内容安全 | 来源/模型文本不作为 HTML 执行，不展示隐藏思考或技术名称 |
+| 构建与联调 | 确定性模型、HTTP/API、来源详情、人工流程及选座回归通过；真实云服务验证另行说明 |
+
+本轮实现与验证结果见 [Java README](java-customer-service/README.md)：Spring Boot 4.1.1 / Spring AI 2.0.1 在 Java 21 下完成41项测试与打包，本地模拟 DeepSeek 浏览器联调覆盖政策详情、建议问题、申请刷新与恢复、会话隔离和136座选座确认。真实 DeepSeek 账户、向量检索和真实坐席平台不在本次验证范围。

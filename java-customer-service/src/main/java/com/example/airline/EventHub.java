@@ -81,7 +81,7 @@ public class EventHub {
             emitter.send(SseEmitter.event().name(name).id(Long.toString(conversation.sequence)).data(data));
         } catch (IOException | IllegalStateException exception) {
             conversation.listeners.remove(emitter);
-            emitter.complete();
+            // The servlet container owns completion after an I/O error; do not write or complete again.
             LOG.debug("Closed disconnected SSE listener for thread {}", conversation.id);
         }
     }

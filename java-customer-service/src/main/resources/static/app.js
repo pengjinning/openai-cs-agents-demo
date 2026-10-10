@@ -11,7 +11,34 @@ let lastRevision = -1;
 const toolLabels = {
   update_seat: "修改座位", assign_special_service_seat: "安排特殊服务座位",
   book_new_flight: "改签航班", cancel_flight: "取消预订", issue_compensation: "发放演示补偿",
+  get_trip_details: "查询航程", flight_status_tool: "查询航班状态", get_matching_flights: "查找替代航班",
+  faq_lookup_tool: "查询政策", display_seat_map: "打开座位图", transfer_to_agent: "转接客服",
 };
+const statusLabels = {
+  IDLE: "等待您的咨询", RUNNING: "正在为您处理", COMPLETED: "本次服务已完成",
+  REJECTED: "暂无法处理此请求", FAILED: "处理未完成", PASSED: "已通过",
+  ERROR: "检查未完成", NOT_RUN: "等待检查", CONFIRMED: "已确认", CANCELLED: "已取消", UNLOADED: "尚未选择航程",
+};
+const eventLabels = {
+  run_started: "开始服务", guardrail: "安全检查", progress: "正在处理", tool_call: "服务申请",
+  tool_output: "处理结果", handoff: "客服转接", run_finished: "服务结果", ui_action: "您的申请",
+  operation_result: "操作结果",
+  service_insights: "咨询整理", human_requested: "人工服务申请", human_resumed: "恢复智能服务",
+};
+const moodLabels = { positive: "积极", neutral: "平和", negative: "不满", curious: "希望了解",
+  frustrated: "遇到困扰", confused: "需要说明" };
+const categoryLabels = { flight: "航班", booking: "预订", seat: "座位", policy: "政策",
+  baggage: "行李", compensation: "延误关怀", human: "人工服务" };
+const argumentLabels = {
+  flight_number: "目标航班", confirmation_number: "确认号", new_seat: "目标座位",
+  seat_request: "特殊服务需求", reason: "申请原因",
+};
+
+function serviceText(text) {
+  let result = text;
+  Object.entries(toolLabels).forEach(([name, label]) => { result = result.replaceAll(name, label); });
+  return result;
+}
 
 function notice(message = "") { byId("notice").textContent = message; }
 function node(tag, text, className) {
@@ -33,14 +60,44 @@ async function api(path, method = "GET", body) {
 const threadPath = (id = threadId) => `/api/threads/${encodeURIComponent(id)}`;
 
 function busy() { return sending || state?.runStatus === "RUNNING"; }
+function humanPending() { return state?.humanCases?.at(-1)?.status === "REQUESTED"; }
 function controls() {
-  byId("send").disabled = !threadId || busy();
+  byId("send").disabled = !threadId || busy() || humanPending();
+  byId("message").disabled = !threadId || humanPending();
   byId("new-thread").disabled = busy();
   byId("delete-thread").disabled = !threadId || busy();
   byId("open-seats").disabled = !threadId || busy();
   document.querySelectorAll("[data-prompt],.confirm-operation,.seat").forEach((button) => {
-    button.disabled = busy() || button.classList.contains("occupied");
+    button.disabled = !threadId || busy() || humanPending() || button.classList.contains("occupied");
   });
+  byId("request-human").disabled = !threadId || busy() || humanPending();
+  byId("human-reason").disabled = !threadId || busy() || humanPending();
+  byId("resume-human").hidden = !humanPending();
+  byId("resume-human").disabled = busy();
+}
+
+function insightTags(insights) {
+  if (!insights) return [];
+  return [node("span", moodLabels[insights.mood], "insight-tag"),
+    ...insights.categories.map((category) => node("span", categoryLabels[category], "insight-tag"))];
+}
+
+function sourceButton(sourceId, title, id = threadId) {
+  const button = node("button", title, "secondary");
+  button.type = "button";
+  button.addEventListener("click", () => showSource(sourceId, id));
+  return button;
+}
+
+async function showSource(sourceId, id) {
+  try {
+    const source = await api(`${threadPath(id)}/knowledge/${encodeURIComponent(sourceId)}`);
+    if (id !== threadId) return;
+    byId("source-title").textContent = source.title;
+    byId("source-version").textContent = `资料版本：${source.version} · 演示政策`;
+    byId("source-content").textContent = source.content;
+    if (!byId("source-dialog").open) byId("source-dialog").showModal();
+  } catch (error) { if (id === threadId) notice(error.message); }
 }
 
 function render(snapshot) {
@@ -49,32 +106,81 @@ function render(snapshot) {
   lastRevision = snapshot.revision;
   byId("agents").replaceChildren(...snapshot.agents.map((agent) => {
     const element = node("div", agent.name, `agent${agent.id === snapshot.activeAgentId ? " active" : ""}`);
-    element.title = `工具：${agent.tools.join(", ")}；交接：${agent.handoffs.join(", ")}`;
     return element;
   }));
-  byId("run-status").textContent = `运行：${snapshot.runStatus} · 状态版本 ${snapshot.revision}`;
+  byId("run-status").textContent = humanPending() ? "已登记人工申请，智能服务暂停"
+    : statusLabels[snapshot.runStatus] || "服务状态更新中";
   const labels = { bookingStatus: "预订状态", passengerName: "演示乘客", confirmationNumber: "演示确认号",
-    flightNumber: "操作航班", seatNumber: "当前座位", vouchers: "演示凭证", seatMapVersion: "座位图版本", demo: "演示" };
+    flightNumber: "操作航班", seatNumber: "当前座位", vouchers: "演示凭证" };
   const fields = [];
   Object.entries(snapshot.context).forEach(([key, value]) => {
-    fields.push(node("dt", labels[key] || key), node("dd", Array.isArray(value) ? value.join("；") : String(value)));
+    if (!labels[key]) return;
+    fields.push(node("dt", labels[key]), node("dd", Array.isArray(value) ? value.join("；") : statusLabels[value] || String(value)));
   });
   byId("context").replaceChildren(...fields);
   byId("guardrails").replaceChildren(...snapshot.guardrails.map((check) =>
-    node("div", `${check.name}: ${check.status}${check.reasoning ? ` — ${check.reasoning}` : ""}`, `guardrail ${check.status}`)));
+    node("div", `${check.name === "Relevance Guardrail" ? "服务范围检查" : "请求安全检查"}：${statusLabels[check.status] || "检查中"}`, `guardrail ${check.status}`)));
   byId("events").replaceChildren(...snapshot.events.slice().reverse().map((event) => {
     const element = node("div", undefined, "event");
-    element.append(node("strong", `#${event.sequence} ${event.type} · ${event.agent}`),
-      node("div", event.content));
+    const agentName = snapshot.agents.find((agent) => agent.id === event.agent)?.name || "客服";
+    element.append(node("strong", `${eventLabels[event.type] || "服务进展"} · ${agentName}`),
+      node("div", serviceText(event.content)));
     return element;
   }));
-  byId("messages").replaceChildren(...snapshot.messages.map((message) => node("div", message.content, `message ${message.role}`)));
+  const sources = new Map(snapshot.knowledgeHistory.flatMap((lookup) => lookup.sources.map((source) => [source.id, source])));
+  byId("messages").replaceChildren(...snapshot.messages.map((message) => {
+    const element = node("div", undefined, `message ${message.role}`);
+    element.append(node("div", message.role === "assistant" ? serviceText(message.content) : message.content));
+    if (message.role === "assistant") {
+      element.append(...insightTags(message.insights));
+      if (message.sourceIds.length) {
+        const links = node("div", undefined, "source-links");
+        links.append(node("span", "查询到的参考资料："), ...message.sourceIds.map((id) =>
+          sourceButton(id, sources.get(id)?.title || "查看资料")));
+        element.append(links);
+      }
+    }
+    return element;
+  }));
+  byId("insights").replaceChildren(...insightTags(snapshot.insights));
+  if (!snapshot.insights) byId("insights").append(node("p", "本轮尚未整理咨询信息", "hint"));
+  byId("follow-ups").replaceChildren(...snapshot.suggestedQuestions.map((question) => {
+    const button = node("button", question, "secondary");
+    button.dataset.prompt = question;
+    button.addEventListener("click", () => sendMessage(question));
+    return button;
+  }));
+  byId("knowledge").replaceChildren(...snapshot.knowledgeHistory.slice().reverse().map((lookup) => {
+    const card = node("div", undefined, "source-card");
+    card.append(node("strong", lookup.query), node("p", new Date(lookup.timestamp).toLocaleString(), "hint"));
+    if (!lookup.sources.length) card.append(node("p", "没有匹配的演示资料，可申请人工服务。"));
+    lookup.sources.forEach((source) => {
+      card.append(node("p", source.snippet), sourceButton(source.id, source.title));
+    });
+    return card;
+  }));
+  if (!snapshot.knowledgeHistory.length) byId("knowledge").append(node("p", "尚未查询政策资料", "hint"));
+  byId("human-recommendation").textContent = snapshot.humanRecommended
+    ? "如果问题仍未解决，您可以登记演示人工服务申请。" : "";
+  byId("human-cases").replaceChildren(...snapshot.humanCases.slice().reverse().map((supportCase) => {
+    const card = node("div", undefined, "human-case");
+    card.append(node("strong", supportCase.status === "REQUESTED" ? "申请已登记 · 尚未接通真人" : "已取消 · 恢复智能服务"),
+      node("p", `申请号：${supportCase.id}`), node("p", `原因：${supportCase.reason}`),
+      node("p", `登记时间：${new Date(supportCase.createdAt).toLocaleString()}`));
+    const details = node("details");
+    details.append(node("summary", "登记时的公开对话摘要"));
+    supportCase.summary.forEach((entry) =>
+      details.append(node("p", `${entry.role === "user" ? "您" : "客服"}：${serviceText(entry.content)}`)));
+    card.append(details);
+    return card;
+  }));
+  if (!snapshot.humanCases.length) byId("human-cases").append(node("p", "暂无人工服务申请", "hint"));
   byId("messages").scrollTop = byId("messages").scrollHeight;
   byId("operations").replaceChildren(...snapshot.pendingOperations.map((operation) => {
     const element = node("div", undefined, "operation");
-    element.append(node("strong", `${toolLabels[operation.tool] || operation.tool}（演示）`),
+    element.append(node("strong", `${toolLabels[operation.tool] || "服务申请"}（演示）`),
       node("p", `航班：${operation.booking.flightNumber} · 演示确认号：${operation.booking.confirmationNumber}`),
-      node("pre", JSON.stringify(operation.arguments, null, 2)),
+      node("p", Object.entries(operation.arguments).map(([key, value]) => `${argumentLabels[key] || "申请内容"}：${value}`).join("；")),
       node("p", `有效期至 ${new Date(operation.expiresAt).toLocaleTimeString()}`));
     const button = node("button", "确认此演示操作", "confirm-operation");
     button.addEventListener("click", () => confirmOperation(operation.id));
@@ -100,6 +206,8 @@ async function refresh(id = threadId) {
 
 function bind(snapshot) {
   stream?.close();
+  byId("source-dialog").close();
+  byId("human-reason").value = "";
   threadId = snapshot.threadId;
   sessionStorage.setItem("airline-thread", threadId);
   lastRevision = -1;
@@ -112,13 +220,13 @@ function bind(snapshot) {
   stream.addEventListener("snapshot", (event) => {
     if (boundId !== threadId) return;
     try { render(JSON.parse(event.data)); }
-    catch { notice("状态事件格式错误，请刷新页面。"); }
+    catch { notice("服务进展更新失败，请刷新页面。"); }
   });
   stream.onopen = () => {
-    if (boundId === threadId) byId("connection").textContent = "状态流已连接 · 断线后自动获取完整快照";
+    if (boundId === threadId) byId("connection").textContent = "服务已连接";
   };
   stream.onerror = () => {
-    if (boundId === threadId) byId("connection").textContent = "状态流断开，正在尝试重连…";
+    if (boundId === threadId) byId("connection").textContent = "连接中断，正在重新连接…";
   };
 }
 
@@ -134,7 +242,7 @@ async function createThread() {
 }
 
 async function sendMessage(message) {
-  if (!threadId || busy()) return;
+  if (!threadId || busy() || humanPending()) return;
   const id = threadId;
   sending = true;
   controls();
@@ -142,7 +250,7 @@ async function sendMessage(message) {
   try {
     const reply = await api(`${threadPath(id)}/messages`, "POST", { requestId: crypto.randomUUID(), message });
     if (id === threadId) {
-      if (reply.status !== "COMPLETED") notice(reply.message);
+      if (reply.status !== "COMPLETED") notice(serviceText(reply.message));
       byId("message").value = "";
       await refresh(id);
     }
@@ -157,12 +265,12 @@ async function sendMessage(message) {
 }
 
 async function confirmOperation(operationId) {
-  if (busy()) return;
+  if (busy() || humanPending()) return;
   sending = true;
   controls();
   try {
     const result = await api(`${threadPath()}/operations/confirm`, "POST", { operationId });
-    notice(result.userMessage);
+    notice(serviceText(result.userMessage));
     await refresh();
   } catch (error) { notice(error.message); }
   finally { sending = false; controls(); }
@@ -175,7 +283,7 @@ async function openSeats() {
     const data = await api(`${threadPath(id)}/seats`);
     if (id !== threadId) return;
     seats = data;
-    byId("seat-status").textContent = `演示航班 ${data.flightNumber} · 版本 ${data.version}`;
+    byId("seat-status").textContent = `演示航班 ${data.flightNumber}`;
     const rows = [];
     for (let row = 1; row <= 24; row++) {
       if ([1, 5, 9].includes(row)) rows.push(node("div", row === 1 ? "商务舱" : row === 5 ? "优选经济舱" : "经济舱", "cabin-title"));
@@ -198,12 +306,12 @@ async function openSeats() {
 }
 
 async function selectSeat(seatNumber, version) {
-  if (busy()) return;
+  if (busy() || humanPending()) return;
   sending = true;
   controls();
   try {
     const result = await api(`${threadPath()}/seats`, "POST", { seatNumber, version });
-    notice(result.userMessage);
+    notice(serviceText(result.userMessage));
     await refresh();
   } catch (error) { notice(error.message); }
   finally { sending = false; controls(); }
@@ -215,6 +323,12 @@ byId("chat-form").addEventListener("submit", (event) => {
   if (message) void sendMessage(message);
 });
 byId("new-thread").addEventListener("click", createThread);
+byId("close-source").addEventListener("click", () => byId("source-dialog").close());
+byId("human-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  void changeHuman(false);
+});
+byId("resume-human").addEventListener("click", () => changeHuman(true));
 byId("open-seats").addEventListener("click", openSeats);
 byId("delete-thread").addEventListener("click", async () => {
   if (!threadId || busy()) return;
@@ -230,6 +344,22 @@ byId("delete-thread").addEventListener("click", async () => {
 document.querySelectorAll("[data-prompt]").forEach((button) => {
   button.addEventListener("click", () => sendMessage(button.dataset.prompt));
 });
+
+async function changeHuman(resume) {
+  if (!threadId || busy() || (!resume && humanPending())) return;
+  const id = threadId;
+  sending = true;
+  controls();
+  try {
+    await api(`${threadPath(id)}/human-support${resume ? "/resume" : ""}`, "POST",
+      resume ? undefined : { reason: byId("human-reason").value.trim() });
+    if (id === threadId) {
+      notice(resume ? "已恢复智能服务。" : "已登记演示人工申请，尚未接通真人。");
+      await refresh(id);
+    }
+  } catch (error) { if (id === threadId) notice(error.message); }
+  finally { sending = false; controls(); }
+}
 
 async function initialize() {
   try {

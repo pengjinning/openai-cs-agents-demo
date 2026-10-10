@@ -1,6 +1,7 @@
 server:
   address: ${SERVER_ADDRESS:127.0.0.1}
   port: ${SERVER_PORT:8080}
+  shutdown: immediate
   servlet:
     session:
       timeout: 60m

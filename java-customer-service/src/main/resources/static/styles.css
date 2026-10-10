@@ -39,6 +39,17 @@ form { display: flex; gap: 10px; align-items: stretch; }
 textarea { width: 100%; resize: vertical; border: 1px solid #bac9db; border-radius: 10px; padding: 12px; font-size: 14px; }
 .operation { padding: 14px; border: 1px solid #ecd7a5; border-radius: 10px; background: #fffaf0; margin: 10px 0; font-size: 13px; overflow-wrap: anywhere; }
 .operation pre { white-space: pre-wrap; font-size: 12px; }
+.insight-tag { display: inline-block; padding: 6px 10px; margin: 4px; border-radius: 16px; background: #edf3fc; color: #315a99; font-size: 12px; }
+.source-card, .human-case { border: 1px solid #dfe6f1; border-radius: 10px; padding: 12px; margin: 10px 0; font-size: 13px; overflow-wrap: anywhere; }
+.source-card p, .human-case p { line-height: 1.7; }
+.source-links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.source-links button { background: #e8f3f0; color: #176b54; padding: 6px 10px; }
+#follow-ups:not(:empty) { margin-bottom: 14px; }
+#human-form { margin-bottom: 12px; }
+#human-recommendation { font-size: 13px; color: #854d0e; }
+dialog { border: 1px solid #dce4f0; border-radius: 14px; padding: 24px; width: min(600px, 92vw); max-height: 80vh; color: #172033; }
+dialog::backdrop { background: #17203380; }
+#source-content { white-space: pre-wrap; line-height: 1.8; margin-top: 20px; }
 .seat-row { display: flex; justify-content: center; gap: 6px; margin: 5px 0; align-items: center; }
 .row-label { width: 30px; font-size: 12px; color: #64748b; }
 .seat { padding: 0; width: 40px; height: 34px; background: #e4effd; color: #285780; font-size: 12px; }

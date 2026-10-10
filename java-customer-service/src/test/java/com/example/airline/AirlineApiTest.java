@@ -12,6 +12,7 @@ import tools.jackson.databind.JsonNode;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -47,7 +48,7 @@ class AirlineApiTest {
                 .andExpect(status().isForbidden());
         String id = create(owner);
         Browser stranger = browser();
-        for (String suffix : new String[]{"", "/seats", "/events"}) {
+        for (String suffix : new String[]{"", "/seats", "/events", "/knowledge/wifi-demo"}) {
             mvc.perform(get("/api/threads/" + id + suffix).session(stranger.session))
                     .andExpect(status().isNotFound());
         }
@@ -108,6 +109,66 @@ class AirlineApiTest {
         assertThat(state.path("messages").size()).isEqualTo(2);
         assertThat(state.path("runStatus").asString()).isEqualTo("COMPLETED");
         assertThat(state.path("events").toString()).contains("handoff", "toolCallId");
+        assertThat(state.path("messages").get(1).path("sourceIds").get(0).asString()).isEqualTo("wifi-demo");
+        assertThat(state.path("knowledgeHistory").size()).isEqualTo(1);
+        mvc.perform(get("/api/threads/" + id + "/knowledge/wifi-demo").session(browser.session))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value("demo-v1"))
+                .andExpect(jsonPath("$.content").value("演示：免费 Wi-Fi，网络名称 Airline-Wifi。"));
+        mvc.perform(get("/api/threads/" + id + "/knowledge/baggage-demo").session(browser.session))
+                .andExpect(status().isNotFound());
+        String freshId = create(browser);
+        mvc.perform(get("/api/threads/" + freshId + "/knowledge/wifi-demo").session(browser.session))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void humanCaseWorksWithoutModelAndBlocksWritesUntilIdempotentResume() throws Exception {
+        Browser owner = browser();
+        String id = create(owner);
+        String endpoint = "/api/threads/" + id + "/human-support";
+        Browser stranger = browser();
+        mvc.perform(post(endpoint).session(stranger.session).header("X-CSRF-Token", stranger.csrf)
+                        .contentType("application/json").content("{\"reason\":\"需要帮助\"}"))
+                .andExpect(status().isNotFound());
+        mvc.perform(post(endpoint).session(owner.session).contentType("application/json").content("{\"reason\":\"需要帮助\"}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(post(endpoint).session(owner.session).header("X-CSRF-Token", owner.csrf)
+                        .contentType("application/json").content("{\"reason\":\" \"}"))
+                .andExpect(status().isBadRequest());
+        var request = mvc.perform(post(endpoint).session(owner.session).header("X-CSRF-Token", owner.csrf)
+                        .contentType("application/json").content("{\"reason\":\"需要帮助\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("REQUESTED")).andReturn();
+        String caseId = Json.read(request.getResponse().getContentAsString()).path("id").asString();
+        mvc.perform(post(endpoint).session(owner.session).header("X-CSRF-Token", owner.csrf)
+                        .contentType("application/json").content("{\"reason\":\"重复申请\"}"))
+                .andExpect(jsonPath("$.id").value(caseId));
+        for (String[] action : new String[][]{
+                {"/messages", "{\"requestId\":\"blocked\",\"message\":\"查航班\"}"},
+                {"/seats", "{\"seatNumber\":\"15C\",\"version\":1}"},
+                {"/operations/confirm", "{\"operationId\":\"unknown\"}"}}) {
+            mvc.perform(post("/api/threads/" + id + action[0]).session(owner.session)
+                            .header("X-CSRF-Token", owner.csrf).contentType("application/json").content(action[1]))
+                    .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("HUMAN_SUPPORT_PENDING"));
+        }
+        mvc.perform(get("/api/threads/" + id).session(owner.session))
+                .andExpect(jsonPath("$.humanCases.length()").value(1))
+                .andExpect(jsonPath("$.humanCases[0].id").value(caseId));
+        mvc.perform(post(endpoint + "/resume").session(stranger.session).header("X-CSRF-Token", stranger.csrf))
+                .andExpect(status().isNotFound());
+        mvc.perform(post(endpoint + "/resume").session(owner.session)).andExpect(status().isForbidden());
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mvc.perform(post(endpoint + "/resume").session(owner.session).header("X-CSRF-Token", owner.csrf))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(caseId))
+                    .andExpect(jsonPath("$.status").value("CANCELLED"));
+        }
+        mvc.perform(get("/api/threads/" + id).session(owner.session))
+                .andExpect(jsonPath("$.events.length()").value(2))
+                .andExpect(jsonPath("$.activeAgentId").value("triage"));
+        mvc.perform(post("/api/threads/" + id + "/seats").session(owner.session)
+                        .header("X-CSRF-Token", owner.csrf).contentType("application/json")
+                        .content("{\"seatNumber\":\"15C\",\"version\":1}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("NEEDS_CONFIRMATION"));
+        verifyNoInteractions(model);
     }
 
     @Test

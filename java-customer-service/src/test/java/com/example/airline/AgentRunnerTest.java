@@ -33,12 +33,14 @@ class AgentRunnerTest {
     }
 
     static AssistantMessage check(boolean passed) {
-        return new AssistantMessage("{\"passed\":" + passed + ",\"reasoning\":\"test\"}");
+        return new AssistantMessage("{\"passed\":" + passed
+                + ",\"reasoning\":\"test\",\"mood\":\"neutral\",\"categories\":[],\"humanRequested\":false}");
     }
 
     private AgentRunner runner(ScriptedModel model, BusinessTools tools, int steps) {
         AgentCatalog catalog = new AgentCatalog();
-        return new AgentRunner(catalog, tools, model, new InputChecks(model), new EventHub(catalog), properties(steps));
+        EventHub events = new EventHub(catalog);
+        return new AgentRunner(catalog, tools, model, new InputChecks(model), events, properties(steps), new HumanSupport(events));
     }
 
     @Test
@@ -125,6 +127,36 @@ class AgentRunnerTest {
         assertThat(conversation.history.getLast()).isInstanceOf(ToolResponseMessage.class);
         assertThat(conversation.activeAgent).isEqualTo("faq");
         assertThat(conversation.runLock.isLocked()).isFalse();
+    }
+
+    @Test
+    void handoffSchemasAndPromptsExposeOnlyCurrentRoleTargets() {
+        AgentCatalog catalog = new AgentCatalog();
+        for (AgentCatalog.Agent agent : catalog.all()) {
+            var schema = Json.read(catalog.handoffDefinition(agent.id()).inputSchema());
+            List<String> targets = new ArrayList<>();
+            schema.path("properties").path("target").path("enum").forEach(value -> targets.add(value.asString()));
+            assertThat(targets).containsExactlyElementsOf(agent.handoffs());
+            assertThat(catalog.prompt(agent.id())).contains("当前客服角色 ID：" + agent.id(),
+                    "精确 ID：" + String.join(", ", agent.handoffs()));
+        }
+    }
+
+    @Test
+    void disallowedHandoffStillFailsWithoutChangingAgentOrWritingBusinessState() {
+        ScriptedModel model = new ScriptedModel(check(true), check(true),
+                call("invalid-route", "transfer_to_agent", "{\"target\":\"booking\"}"));
+        Conversation conversation = new Conversation("owner", "on_time");
+        conversation.activeAgent = "faq";
+        assertThat(runner(model, new BusinessTools(), 16).respond(conversation, "one", "我要改签").status())
+                .isEqualTo("FAILED");
+        assertThat(conversation.activeAgent).isEqualTo("faq");
+        assertThat(conversation.pending).isEmpty();
+        assertThat(conversation.events.stream().filter(event -> event.type().equals("handoff_rejected")))
+                .singleElement().satisfies(event -> {
+                    assertThat(event.metadata()).containsEntry("sourceAgent", "faq").containsEntry("requestedTarget", "booking");
+                });
+        assertThat(conversation.history.stream().filter(message -> message instanceof AssistantMessage)).isEmpty();
     }
 
     @Test

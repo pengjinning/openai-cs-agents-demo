@@ -33,7 +33,8 @@ class DeepSeekProtocolTest {
             Map<String, Object> message;
             String finish;
             if (step <= 2) {
-                message = Map.of("role", "assistant", "content", "{\"passed\":true,\"reasoning\":\"local fixture\"}");
+                message = Map.of("role", "assistant", "content", "{\"passed\":true,\"reasoning\":\"local fixture\","
+                        + "\"mood\":\"curious\",\"categories\":[\"policy\"],\"humanRequested\":false}");
                 finish = "stop";
             } else if (step == 3 || step == 4) {
                 String name = step == 3 ? "transfer_to_agent" : "faq_lookup_tool";
@@ -64,8 +65,9 @@ class DeepSeekProtocolTest {
                     .baseUrl("http://127.0.0.1:" + server.getAddress().getPort()).build();
             gateway = new DeepSeekGateway(DeepSeekChatModel.builder().deepSeekApi(api).build(), AgentRunnerTest.properties(16));
             AgentCatalog catalog = new AgentCatalog();
+            EventHub events = new EventHub(catalog);
             AgentRunner runner = new AgentRunner(catalog, new BusinessTools(), gateway,
-                    new InputChecks(gateway), new EventHub(catalog), AgentRunnerTest.properties(16));
+                    new InputChecks(gateway), events, AgentRunnerTest.properties(16), new HumanSupport(events));
             Conversation conversation = new Conversation("owner", "on_time");
             AgentRunner.Reply reply = runner.respond(conversation, "protocol-test", "Wi-Fi政策？");
             assertThat(reply.status()).isEqualTo("COMPLETED");

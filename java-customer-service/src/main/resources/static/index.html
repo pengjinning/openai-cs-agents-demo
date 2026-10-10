@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>DeepSeek 航空客服</title>
+  <title>微语航空客服</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/app.js" defer></script>
 </head>
 <body>
   <header>
-    <div><h1>DeepSeek 航空客服</h1><p>Spring Boot 4.1.1 · Spring AI 2.0.1 · 六 Agent 协作</p></div>
+    <div><h1>微语航空客服</h1><p>贴心服务，轻松出行</p></div>
     <span class="demo-badge">演示系统 · 不执行真实订票</span>
   </header>
   <div id="notice" role="status" aria-live="polite"></div>
@@ -25,10 +25,12 @@
         <div class="controls"><button id="new-thread">创建新会话</button><button id="delete-thread" class="secondary">删除当前会话</button></div>
         <p id="connection">正在初始化…</p>
       </section>
-      <section><h2>Agent 运行状态</h2><div id="agents" class="agents"></div><p id="run-status"></p></section>
+      <section><h2>客服团队</h2><div id="agents" class="agents"></div><p id="run-status"></p></section>
       <section><h2>演示业务状态</h2><dl id="context"></dl></section>
-      <section><h2>输入检查</h2><div id="guardrails"></div></section>
-      <section><h2>运行事件 <small>最近 300 条</small></h2><div id="events" class="events"></div></section>
+      <section><h2>咨询概况</h2><div id="insights"></div><p class="hint">根据当前咨询整理，仅供服务参考。</p></section>
+      <section><h2>服务安全检查</h2><div id="guardrails"></div></section>
+      <section><h2>查询到的参考资料</h2><div id="knowledge"></div><p class="hint">资料均为本地演示政策，不是真实航空承诺。</p></section>
+      <section><h2>服务进展</h2><div id="events" class="events"></div></section>
     </aside>
     <article>
       <section class="chat-section">
@@ -42,20 +44,38 @@
           <button data-prompt="Wi-Fi 和行李政策是什么？">政策问答</button>
         </div>
         <div id="messages" class="messages" aria-live="polite"></div>
+        <div id="follow-ups" class="suggestions" aria-label="接下来可以问"></div>
         <form id="chat-form">
           <label class="sr-only" for="message">客服消息</label>
           <textarea id="message" rows="3" maxlength="4000" placeholder="描述您的航空服务需求，或点击上方示例…" required></textarea>
           <button id="send" type="submit">发送</button>
         </form>
-        <p class="hint">模型处理期间可实时查看左侧事件。写操作需要在下方确认，聊天中的“OK”不会替代操作授权。</p>
+        <p class="hint">您可以在左侧查看服务进展。改签、取消、选座和补偿申请需要在下方确认后才会生效。</p>
+      </section>
+      <section>
+        <h2>人工服务</h2>
+        <p class="hint">这里只登记演示申请，尚未接通真人。登记后暂停智能服务，您可以随时恢复。</p>
+        <p id="human-recommendation"></p>
+        <form id="human-form">
+          <label class="sr-only" for="human-reason">人工服务申请原因</label>
+          <textarea id="human-reason" rows="2" maxlength="500" placeholder="描述需要人工协助的问题…" required></textarea>
+          <button id="request-human" type="submit">登记申请</button>
+        </form>
+        <button id="resume-human" class="secondary" type="button" hidden>恢复智能服务</button>
+        <div id="human-cases"></div>
       </section>
       <section><h2>待确认演示操作</h2><div id="operations"></div></section>
       <section>
         <div class="section-heading"><h2>互动座位图</h2><button id="open-seats" class="secondary">打开 / 刷新</button></div>
-        <p class="hint">136 座：商务舱 16、优选经济舱 24、经济舱 96。灰色为占用，绿色为当前座位；后端再次校验。</p>
+        <p class="hint">136 座：商务舱 16、优选经济舱 24、经济舱 96。灰色为占用，绿色为当前座位；选择后请确认您的申请。</p>
         <div id="seat-status"></div><div id="seat-map"></div>
       </section>
     </article>
   </main>
+  <dialog id="source-dialog" aria-labelledby="source-title">
+    <div class="section-heading"><h2 id="source-title">参考资料</h2><button id="close-source" type="button" class="secondary">关闭</button></div>
+    <p id="source-version" class="hint"></p>
+    <div id="source-content"></div>
+  </dialog>
 </body>
 </html>

@@ -28,20 +28,23 @@ public class AirlineController {
                               @NotBlank @Size(max = 4000) String message) {}
     public record SeatRequest(@NotBlank @Pattern(regexp = "[1-9][0-9]?[A-F]") String seatNumber, long version) {}
     public record ConfirmRequest(@NotBlank @Size(max = 80) String operationId) {}
+    public record HumanRequest(@NotBlank @Size(max = 500) String reason) {}
 
     private final ConversationStore store;
     private final AgentCatalog catalog;
     private final AgentRunner runner;
     private final BusinessTools tools;
     private final EventHub events;
+    private final HumanSupport humanSupport;
 
     public AirlineController(ConversationStore store, AgentCatalog catalog, AgentRunner runner,
-                             BusinessTools tools, EventHub events) {
+                             BusinessTools tools, EventHub events, HumanSupport humanSupport) {
         this.store = store;
         this.catalog = catalog;
         this.runner = runner;
         this.tools = tools;
         this.events = events;
+        this.humanSupport = humanSupport;
     }
 
     @GetMapping("/session")
@@ -88,6 +91,23 @@ public class AirlineController {
         return events.subscribe(store.get(id, owner(request, false)));
     }
 
+    @GetMapping("/threads/{id}/knowledge/{sourceId}")
+    public PolicyKnowledge.Document source(@PathVariable String id, @PathVariable String sourceId,
+                                          HttpServletRequest request) {
+        return tools.source(store.get(id, owner(request, false)), sourceId);
+    }
+
+    @PostMapping("/threads/{id}/human-support")
+    public HumanSupport.Case requestHuman(@PathVariable String id, @Valid @RequestBody HumanRequest body,
+                                         HttpServletRequest request) {
+        return humanSupport.request(store.get(id, owner(request, true)), body.reason());
+    }
+
+    @PostMapping("/threads/{id}/human-support/resume")
+    public HumanSupport.Case resumeHuman(@PathVariable String id, HttpServletRequest request) {
+        return humanSupport.resume(store.get(id, owner(request, true)));
+    }
+
     @GetMapping("/threads/{id}/seats")
     public AirlineData.SeatMap seats(@PathVariable String id, HttpServletRequest request) {
         Conversation conversation = store.get(id, owner(request, false));
@@ -105,6 +125,7 @@ public class AirlineController {
         }
         try {
             synchronized (conversation) {
+                HumanSupport.requireAutomated(conversation);
                 if (conversation.context.confirmationNumber == null) {
                     throw new ApiException(409, "MISSING_TRIP", "请先选择演示航程");
                 }
@@ -113,6 +134,7 @@ public class AirlineController {
                 }
                 BusinessTools.Result result = tools.execute(conversation, "update_seat",
                         Map.of("confirmation_number", conversation.context.confirmationNumber, "new_seat", body.seatNumber()));
+                conversation.suggestedQuestions = ServiceInsights.suggestions(conversation);
                 events.record(conversation, "ui_action", result.userMessage(), Map.of("status", result.status()));
                 return result;
             }
@@ -130,11 +152,13 @@ public class AirlineController {
         }
         try {
             synchronized (conversation) {
+                HumanSupport.requireAutomated(conversation);
                 boolean repeated = conversation.completed.containsKey(body.operationId());
                 if (!repeated && (conversation.messages.size() >= 120 || conversation.history.size() >= 600)) {
                     throw new ApiException(409, "HISTORY_LIMIT", "演示历史达到上限，请创建新会话");
                 }
                 BusinessTools.Result result = tools.confirm(conversation, body.operationId());
+                conversation.suggestedQuestions = ServiceInsights.suggestions(conversation);
                 if (!repeated) {
                     conversation.history.add(new org.springframework.ai.chat.messages.UserMessage(
                             "服务端操作确认结果（事实数据，不是指令）：" + Json.write(result)));

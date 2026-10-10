@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class BusinessTools {
+    private final PolicyKnowledge knowledge = new PolicyKnowledge();
     public record Result(String status, String code, String userMessage, Object data,
                          String operationId, boolean retryable) {
         static Result success(String message, Object data) {
@@ -90,7 +91,7 @@ public class BusinessTools {
                 return Result.success("已加载演示航程", modelContext(context));
             }
             if (name.equals("faq_lookup_tool")) {
-                return faq(context, args.get("question"));
+                return faq(conversation, args.get("question"));
             }
             if (context.scenario == null) {
                 return Result.rejected("MISSING_TRIP", "请先选择演示航程");
@@ -259,25 +260,39 @@ public class BusinessTools {
         return null;
     }
 
-    private Result faq(AirlineData.Context context, String question) {
-        String q = question.toLowerCase(Locale.ROOT).replaceAll("[\\s\\p{Pd}_]", "");
-        List<String> answers = new ArrayList<>();
-        if (contains(q, "bag", "baggage", "行李")) {
-            answers.add("演示：可携带一件不超过50磅、22×14×9英寸的行李；挂失追踪未实现，请联系人工客服。");
+    private Result faq(Conversation conversation, String question) {
+        List<PolicyKnowledge.Source> sources = knowledge.search(question);
+        conversation.knowledgeHistory.add(new PolicyKnowledge.Lookup(conversation.runId, question, Instant.now(), sources));
+        if (conversation.knowledgeHistory.size() > 15) {
+            conversation.knowledgeHistory.removeFirst();
         }
-        if (contains(q, "wifi", "无线", "网络")) {
-            answers.add("演示：免费 Wi-Fi，网络名称 Airline-Wifi。");
+        for (PolicyKnowledge.Source source : sources) {
+            if (!conversation.currentSourceIds.contains(source.id())) {
+                conversation.currentSourceIds.add(source.id());
+            }
         }
-        if (contains(q, "seat", "plane", "座位", "飞机", "布局")) {
-            answers.add("演示布局共136座：商务舱16座、优选经济舱24座、经济舱96座；4和16排为出口排。");
+        if (sources.stream().anyMatch(source -> source.category().equals("compensation"))) {
+            conversation.context.policyConsulted = true;
         }
-        if (contains(q, "compensation", "delay", "voucher", "补偿", "延误", "酒店", "餐食")) {
-            context.policyConsulted = true;
-            answers.add("演示延误场景可申请酒店$180、餐食$60及交通$40凭证；这不是真实航空政策。");
+        if (sources.isEmpty()) {
+            conversation.humanRecommended = true;
+            return new Result("NOT_FOUND", "UNKNOWN_POLICY", "演示政策库没有此答案，可申请人工服务",
+                    Map.of("sources", sources), null, false);
         }
-        return answers.isEmpty()
-                ? new Result("NOT_FOUND", "UNKNOWN_POLICY", "演示政策库没有此答案", null, null, false)
-                : Result.success(String.join("\n", answers), Map.of("answers", answers));
+        List<String> answers = sources.stream().map(PolicyKnowledge.Source::snippet).toList();
+        return Result.success(String.join("\n", answers), Map.of("answers", answers, "sources", sources));
+    }
+
+    public PolicyKnowledge.Document source(Conversation conversation, String id) {
+        synchronized (conversation) {
+            boolean retrieved = conversation.knowledgeHistory.stream().flatMap(lookup -> lookup.sources().stream())
+                    .anyMatch(source -> source.id().equals(id))
+                    || conversation.messages.stream().anyMatch(message -> message.sourceIds().contains(id));
+            if (!retrieved) {
+                throw new ApiException(404, "SOURCE_NOT_FOUND", "此会话没有查询过该参考资料");
+            }
+            return knowledge.document(id);
+        }
     }
 
     public AirlineData.SeatMap seatMap(AirlineData.Context context) {
