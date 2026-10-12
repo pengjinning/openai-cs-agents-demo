@@ -11,7 +11,7 @@ public class AgentCatalog {
     public record Agent(String id, String name, String instructions, List<String> tools, List<String> handoffs) {}
 
     private static final List<Agent> AGENTS = List.of(
-            new Agent("triage", "分诊客服",
+            new Agent("triage", "路由Agent",
                     "识别需求并交接给专业客服。需要航程时先调用 get_trip_details。没有行李挂失服务，只能查询政策。",
                     List.of("get_trip_details"), List.of("flight", "booking", "seat", "faq", "refunds")),
             new Agent("flight", "航班信息客服",
@@ -59,7 +59,7 @@ public class AgentCatalog {
                 不展示隐藏思考过程，不把情绪标签当作授权，不声称已经接通真人。
                 """ + "当前客服角色 ID：" + agent.id() + "，名称：" + agent.name() + "。\n"
                 + "transfer_to_agent 的 target 只能使用以下精确 ID：" + String.join(", ", agent.handoffs()) + "。\n"
-                + "不得使用中文名称或其他角色名称作为 target；职责外请求通过允许的 triage 返回分诊。\n"
+                + "不得使用中文名称或其他角色名称作为 target；职责外请求通过允许的 triage 返回路由Agent。\n"
                 + agent.instructions();
     }
 

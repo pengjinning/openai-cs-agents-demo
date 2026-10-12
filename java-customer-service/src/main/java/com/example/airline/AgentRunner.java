@@ -60,6 +60,7 @@ public class AgentRunner {
                 }
                 conversation.runId = UUID.randomUUID().toString();
                 conversation.runStatus = "RUNNING";
+                conversation.streamingReply = null;
                 conversation.insights = null;
                 conversation.suggestedQuestions = List.of();
                 conversation.currentSourceIds.clear();
@@ -136,7 +137,11 @@ public class AgentRunner {
             agent.tools().forEach(name -> definitions.add(tools.get(name).definition()));
             definitions.add(catalog.handoffDefinition(agent.id()));
             events.record(conversation, "progress", "正在调用 " + agent.name(), Map.of("step", step + 1));
-            AssistantMessage response = model.complete(messages, definitions, timeout(deadline));
+            int replyStep = step + 1;
+            String replyRunId = conversation.runId;
+            events.startReply(conversation, replyStep);
+            AssistantMessage response = model.stream(messages, definitions, timeout(deadline),
+                    delta -> events.appendReply(conversation, replyRunId, replyStep, delta));
             if (!response.hasToolCalls()) {
                 String answer = response.getText();
                 if (answer == null || answer.isBlank()) {
@@ -148,6 +153,9 @@ public class AgentRunner {
                 return finish(conversation, requestId, text, "COMPLETED", answer);
             }
             List<AssistantMessage.ToolCall> calls = response.getToolCalls();
+            synchronized (conversation) {
+                conversation.streamingReply = null;
+            }
             boolean handoff = calls.stream().anyMatch(call -> call.name().equals("transfer_to_agent"));
             if (handoff && calls.size() != 1) {
                 throw new ApiException(502, "AMBIGUOUS_HANDOFF", "模型将交接与其他工具混用，本次请求未执行");
@@ -238,10 +246,16 @@ public class AgentRunner {
     private Reply finish(Conversation conversation, String requestId, String text, String status, String message) {
         synchronized (conversation) {
             conversation.runStatus = status;
+            conversation.streamingReply = null;
             conversation.pending.entrySet().removeIf(entry -> entry.getValue().expiresAt().isBefore(Instant.now()));
             conversation.suggestedQuestions = ServiceInsights.suggestions(conversation);
             conversation.messages.add(new Conversation.ChatEntry("assistant", message,
-                    List.copyOf(conversation.currentSourceIds), conversation.insights, conversation.suggestedQuestions));
+                    List.copyOf(conversation.currentSourceIds), conversation.insights, conversation.suggestedQuestions,
+                    conversation.events.stream().anyMatch(event -> conversation.runId.equals(event.runId())
+                            && event.type().equals("tool_output")
+                            && "display_seat_map".equals(event.metadata().get("toolName"))
+                            && "SUCCESS".equals(event.metadata().get("status")))
+                            ? List.of("OPEN_SEAT_MAP") : List.of()));
             conversation.touchedAt = Instant.now();
             Reply reply = new Reply(requestId, conversation.runId, status, message);
             conversation.requests.put(requestId, reply);

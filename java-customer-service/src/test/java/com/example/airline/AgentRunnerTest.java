@@ -22,6 +22,32 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class AgentRunnerTest {
+    @Test
+    void successfulSeatMapToolAddsPersistentMessageActionOnlyToThatTurn() {
+        ScriptedModel model = new ScriptedModel(check(true), check(true),
+                call("map", "display_seat_map", "{}"), new AssistantMessage("请查看座位图"),
+                check(true), check(true), new AssistantMessage("还有什么需要帮助？"));
+        Conversation conversation = new Conversation("owner", "on_time");
+        conversation.activeAgent = "seat";
+        AgentRunner runner = runner(model, new BusinessTools(), 16);
+        runner.respond(conversation, "map-turn", "查看座位图");
+        assertThat(conversation.messages.getLast().uiActions()).containsExactly("OPEN_SEAT_MAP");
+        assertThat(conversation.snapshot(new AgentCatalog()).messages().getLast().uiActions())
+                .containsExactly("OPEN_SEAT_MAP");
+        runner.respond(conversation, "next-turn", "谢谢");
+        assertThat(conversation.messages.getLast().uiActions()).isEmpty();
+    }
+
+    @Test
+    void routingAgentNameIsConsistentWithoutChangingItsProtocolId() {
+        AgentCatalog catalog = new AgentCatalog();
+        assertThat(catalog.get("triage").name()).isEqualTo("路由Agent");
+        assertThat(catalog.metadata()).anySatisfy(agent ->
+                assertThat(agent).containsEntry("id", "triage").containsEntry("name", "路由Agent"));
+        assertThat(catalog.prompt("triage")).contains("路由Agent").doesNotContain("分诊");
+        assertThat(catalog.handoffDefinition("faq").description()).contains("triage（路由Agent）");
+    }
+
     static AirlineProperties properties(int steps) {
         return new AirlineProperties("deepseek-v4-flash", steps, 24, 8,
                 Duration.ofSeconds(120), Duration.ofSeconds(40), Duration.ofMinutes(60), 500);

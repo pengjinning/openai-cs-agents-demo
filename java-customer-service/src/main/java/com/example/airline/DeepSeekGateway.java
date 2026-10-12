@@ -8,12 +8,15 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import jakarta.annotation.PreDestroy;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.MessageAggregator;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.deepseek.DeepSeekChatOptions;
 import org.springframework.ai.tool.ToolCallback;
@@ -34,6 +37,17 @@ public class DeepSeekGateway implements ModelGateway {
 
     @Override
     public AssistantMessage complete(List<Message> messages, List<ToolDefinition> tools, Duration timeout) {
+        return invoke(messages, tools, timeout, null);
+    }
+
+    @Override
+    public AssistantMessage stream(List<Message> messages, List<ToolDefinition> tools, Duration timeout,
+                                   Consumer<String> onText) {
+        return invoke(messages, tools, timeout, onText);
+    }
+
+    private AssistantMessage invoke(List<Message> messages, List<ToolDefinition> tools, Duration timeout,
+                                    Consumer<String> onText) {
         if (!slots.tryAcquire()) {
             throw new ApiException(503, "MODEL_BUSY", "模型请求容量已满，请稍后重试");
         }
@@ -53,7 +67,22 @@ public class DeepSeekGateway implements ModelGateway {
                 var options = DeepSeekChatOptions.builder().model(properties.model())
                         .disableThinking().temperature(0.2).toolCallbacks(callbacks).build();
                 // Direct ChatModel.call returns tool requests in 2.0.1; no ChatClient tool advisor runs here.
-                ChatResponse response = model.call(new Prompt(messages, options));
+                Prompt prompt = new Prompt(messages, options);
+                ChatResponse response;
+                if (onText == null) {
+                    response = model.call(prompt);
+                } else {
+                    AtomicReference<ChatResponse> aggregate = new AtomicReference<>();
+                    new MessageAggregator().aggregate(model.stream(prompt).doOnNext(chunk -> {
+                        if (chunk.getResult() != null) {
+                            AssistantMessage output = chunk.getResult().getOutput();
+                            if (!output.hasToolCalls() && output.getText() != null && !output.getText().isEmpty()) {
+                                onText.accept(output.getText());
+                            }
+                        }
+                    }), aggregate::set).blockLast();
+                    response = aggregate.get();
+                }
                 if (response == null || response.getResult() == null) {
                     throw new ApiException(502, "EMPTY_MODEL_RESPONSE", "模型没有返回有效结果");
                 }

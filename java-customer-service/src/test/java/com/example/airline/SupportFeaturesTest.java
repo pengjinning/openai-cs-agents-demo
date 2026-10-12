@@ -67,7 +67,7 @@ class SupportFeaturesTest {
                 ",\"mood\":\"neutral\",\"categories\":[\"medical\"],\"humanRequested\":false",
                 ",\"mood\":\"neutral\",\"categories\":[\"seat\",\"seat\"],\"humanRequested\":false",
                 ",\"mood\":\"neutral\",\"categories\":[],\"humanRequested\":\"true\"")) {
-            ModelGateway model = mock(ModelGateway.class);
+            ModelGateway model = mock(ModelGateway.class, org.mockito.Mockito.CALLS_REAL_METHODS);
             when(model.complete(any(), any(), any())).thenReturn(
                     new AssistantMessage("{\"passed\":true,\"reasoning\":\"test\"" + metadata + "}"),
                     AgentRunnerTest.check(true));
@@ -87,7 +87,7 @@ class SupportFeaturesTest {
     @Test
     void explicitHumanIntentRegistersButMoodAloneOnlyRecommends() {
         for (boolean human : List.of(false, true)) {
-            ModelGateway model = mock(ModelGateway.class);
+            ModelGateway model = mock(ModelGateway.class, org.mockito.Mockito.CALLS_REAL_METHODS);
             when(model.complete(any(), any(), any())).thenReturn(
                     new AssistantMessage("{\"passed\":true,\"reasoning\":\"test\",\"mood\":\"frustrated\","
                             + "\"categories\":[\"flight\"],\"humanRequested\":" + human + "}"),
@@ -160,7 +160,7 @@ class SupportFeaturesTest {
         assertThat(ServiceInsights.suggestions(conversation)).hasSize(2)
                 .noneMatch(question -> question.contains("改签") || question.contains("座位"));
 
-        ModelGateway model = mock(ModelGateway.class);
+        ModelGateway model = mock(ModelGateway.class, org.mockito.Mockito.CALLS_REAL_METHODS);
         when(model.complete(any(), any(), any())).thenReturn(
                 AgentRunnerTest.check(true), AgentRunnerTest.check(true),
                 AgentRunnerTest.call("handoff", "transfer_to_agent", "{\"target\":\"faq\"}"),

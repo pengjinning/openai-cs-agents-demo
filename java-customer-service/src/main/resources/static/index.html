@@ -4,8 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>微语航空客服</title>
-  <link rel="stylesheet" href="/styles.css">
-  <script src="/app.js" defer></script>
+  <link rel="stylesheet" href="/styles.css?v=20261011-seat-drawer">
+  <script src="/vendor/marked.js" defer></script>
+  <script src="/vendor/purify.js" defer></script>
+  <script src="/app.js?v=20261011-seat-drawer" defer></script>
 </head>
 <body>
   <header>
@@ -65,13 +67,19 @@
         <div id="human-cases"></div>
       </section>
       <section><h2>待确认演示操作</h2><div id="operations"></div></section>
-      <section>
-        <div class="section-heading"><h2>互动座位图</h2><button id="open-seats" class="secondary">打开 / 刷新</button></div>
-        <p class="hint">136 座：商务舱 16、优选经济舱 24、经济舱 96。灰色为占用，绿色为当前座位；选择后请确认您的申请。</p>
-        <div id="seat-status"></div><div id="seat-map"></div>
-      </section>
     </article>
   </main>
+  <dialog id="seat-drawer" aria-labelledby="seat-title">
+    <div class="section-heading">
+      <h2 id="seat-title">互动座位图</h2>
+      <div class="controls"><button id="open-seats" type="button" class="secondary">刷新</button><button id="close-seats" type="button" class="secondary" autofocus>关闭</button></div>
+    </div>
+    <p class="hint">136 座：商务舱 16、优选经济舱 24、经济舱 96。灰色为占用，绿色为当前座位；选择后请在抽屉内确认申请才会生效。</p>
+    <p id="seat-status" role="status" aria-live="polite"></p>
+    <div id="seat-map"></div>
+    <h2 class="seat-operations-title">待确认选座申请</h2>
+    <div id="seat-operations"></div>
+  </dialog>
   <dialog id="source-dialog" aria-labelledby="source-title">
     <div class="section-heading"><h2 id="source-title">参考资料</h2><button id="close-source" type="button" class="secondary">关闭</button></div>
     <p id="source-version" class="hint"></p>

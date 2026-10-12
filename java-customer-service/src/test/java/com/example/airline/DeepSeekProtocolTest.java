@@ -1,15 +1,23 @@
 package com.example.airline;
 
 import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.deepseek.DeepSeekChatModel;
 import org.springframework.ai.deepseek.api.DeepSeekApi;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.netty.http.client.HttpClient;
 import tools.jackson.databind.JsonNode;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,6 +27,7 @@ class DeepSeekProtocolTest {
     void actualSpringAiDeepSeekSerializesSchemasAndRoundTripsToolHistory() throws Exception {
         AtomicInteger requests = new AtomicInteger();
         AtomicInteger toolResponses = new AtomicInteger();
+        AtomicInteger streamingRequests = new AtomicInteger();
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/chat/completions", exchange -> {
             JsonNode request = Json.read(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
@@ -48,6 +57,33 @@ class DeepSeekProtocolTest {
                 message = Map.of("role", "assistant", "content", "演示免费 Wi-Fi：Airline-Wifi。");
                 finish = "stop";
             }
+            if (request.path("stream").asBoolean()) {
+                streamingRequests.incrementAndGet();
+                exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+                exchange.sendResponseHeaders(200, 0);
+                Map<String, Object> delta = new LinkedHashMap<>(message);
+                if (finish.equals("tool_calls")) {
+                    String name = step == 3 ? "transfer_to_agent" : "faq_lookup_tool";
+                    String args = step == 3 ? "{\"target\":\"faq\"}" : "{\"question\":\"Wi-Fi\"}";
+                    delta.put("tool_calls", List.of(Map.of("index", 0, "id", "call-" + step, "type", "function",
+                            "function", Map.of("name", name, "arguments", args))));
+                }
+                List<Map<String, Object>> chunks = finish.equals("stop")
+                        ? List.of(Map.of("role", "assistant", "content", "演示免费 Wi-Fi："),
+                                Map.of("content", "Airline-Wifi。"))
+                        : List.of(delta);
+                for (int i = 0; i < chunks.size(); i++) {
+                    String data = "data: " + Json.write(Map.of("id", "completion-" + step,
+                            "object", "chat.completion.chunk", "created", 1791612000, "model", "deepseek-v4-flash",
+                            "choices", List.of(Map.of("index", 0, "delta", chunks.get(i),
+                                    "finish_reason", i == chunks.size() - 1 ? finish : "")))) + "\n\n";
+                    exchange.getResponseBody().write(data.getBytes(StandardCharsets.UTF_8));
+                    exchange.getResponseBody().flush();
+                }
+                exchange.getResponseBody().write("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8));
+                exchange.close();
+                return;
+            }
             byte[] body = Json.write(Map.of("id", "completion-" + step, "object", "chat.completion",
                     "created", 1791612000, "model", "deepseek-v4-flash",
                     "choices", List.of(Map.of("index", 0, "message", message, "finish_reason", finish)),
@@ -61,11 +97,25 @@ class DeepSeekProtocolTest {
         server.start();
         DeepSeekGateway gateway = null;
         try {
+            SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+            factory.setProxy(Proxy.NO_PROXY);
             DeepSeekApi api = DeepSeekApi.builder().apiKey("local-test-placeholder")
+                    .restClientBuilder(RestClient.builder().requestFactory(factory))
+                    .webClientBuilder(WebClient.builder().clientConnector(
+                            new ReactorClientHttpConnector(HttpClient.create().noProxy())))
                     .baseUrl("http://127.0.0.1:" + server.getAddress().getPort()).build();
             gateway = new DeepSeekGateway(DeepSeekChatModel.builder().deepSeekApi(api).build(), AgentRunnerTest.properties(16));
             AgentCatalog catalog = new AgentCatalog();
-            EventHub events = new EventHub(catalog);
+            List<String> streamed = new ArrayList<>();
+            EventHub events = new EventHub(catalog) {
+                @Override
+                public void appendReply(Conversation conversation, String runId, int step, String delta) {
+                    super.appendReply(conversation, runId, step, delta);
+                    streamed.add(delta);
+                    assertThat(conversation.runStatus).isEqualTo("RUNNING");
+                    assertThat(conversation.messages).hasSize(1);
+                }
+            };
             AgentRunner runner = new AgentRunner(catalog, new BusinessTools(), gateway,
                     new InputChecks(gateway), events, AgentRunnerTest.properties(16), new HumanSupport(events));
             Conversation conversation = new Conversation("owner", "on_time");
@@ -73,6 +123,9 @@ class DeepSeekProtocolTest {
             assertThat(reply.status()).isEqualTo("COMPLETED");
             assertThat(reply.message()).contains("Airline-Wifi");
             assertThat(requests.get()).isEqualTo(5);
+            assertThat(streamingRequests.get()).isEqualTo(3);
+            assertThat(streamed).containsExactly("演示免费 Wi-Fi：", "Airline-Wifi。");
+            assertThat(conversation.streamingReply).isNull();
             assertThat(toolResponses.get()).isGreaterThanOrEqualTo(3);
             assertThat(conversation.activeAgent).isEqualTo("faq");
         } finally {

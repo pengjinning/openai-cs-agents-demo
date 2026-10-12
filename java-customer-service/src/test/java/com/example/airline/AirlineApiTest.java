@@ -1,6 +1,7 @@
 package com.example.airline;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -24,6 +25,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AirlineApiTest {
     @Autowired MockMvc mvc;
     @MockitoBean ModelGateway model;
+
+    @BeforeEach
+    void useScriptedStreamingDefault() {
+        when(model.stream(any(), any(), any(), any())).thenCallRealMethod();
+    }
 
     private Browser browser() throws Exception {
         var result = mvc.perform(get("/api/session")).andExpect(status().isOk()).andReturn();

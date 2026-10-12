@@ -38,6 +38,7 @@ public class EventHub {
             if (conversation.listeners.size() >= 4) {
                 throw new ApiException(429, "TOO_MANY_LISTENERS", "此会话的连接数量已达到上限");
             }
+
             conversation.listeners.add(emitter);
             Runnable cleanup = () -> {
                 synchronized (conversation) {
@@ -53,6 +54,28 @@ public class EventHub {
             send(conversation, emitter, "snapshot", conversation.snapshot(catalog));
         }
         return emitter;
+    }
+
+    public void startReply(Conversation conversation, int step) {
+        synchronized (conversation) {
+            conversation.streamingReply = new Conversation.StreamingReply(conversation.runId, step, "");
+            conversation.revision++;
+            broadcast(conversation, "snapshot", conversation.snapshot(catalog));
+        }
+    }
+
+    public void appendReply(Conversation conversation, String runId, int step, String delta) {
+        synchronized (conversation) {
+            if (!conversation.runStatus.equals("RUNNING") || conversation.streamingReply == null
+                    || !runId.equals(conversation.runId) || conversation.streamingReply.step() != step) {
+                return;
+            }
+            conversation.streamingReply = new Conversation.StreamingReply(runId, step,
+                    conversation.streamingReply.content() + delta);
+            conversation.revision++;
+            broadcast(conversation, "reply_delta", Map.of("threadId", conversation.id, "runId", runId,
+                    "step", step, "revision", conversation.revision, "delta", delta));
+        }
     }
 
     public void heartbeat(Conversation conversation) {

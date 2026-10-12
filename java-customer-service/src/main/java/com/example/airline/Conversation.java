@@ -15,7 +15,11 @@ public final class Conversation {
     public record Event(String id, String threadId, String runId, long sequence, String type,
                         String agent, String content, long timestamp, Map<String, Object> metadata) {}
     public record ChatEntry(String role, String content, List<String> sourceIds,
-                            ServiceInsights insights, List<String> suggestedQuestions) {
+                            ServiceInsights insights, List<String> suggestedQuestions, List<String> uiActions) {
+        public ChatEntry(String role, String content, List<String> sourceIds,
+                         ServiceInsights insights, List<String> suggestedQuestions) {
+            this(role, content, sourceIds, insights, suggestedQuestions, List.of());
+        }
         public ChatEntry(String role, String content) {
             this(role, content, List.of(), null, List.of());
         }
@@ -23,12 +27,13 @@ public final class Conversation {
     public record Guardrail(String name, String status, String reasoning) {}
     public record Operation(String id, String tool, Map<String, String> arguments,
                             Map<String, String> booking, Instant expiresAt) {}
+    public record StreamingReply(String runId, int step, String content) {}
     public record Snapshot(String threadId, String activeAgentId, String runStatus, long revision,
                            long eventCursor, Map<String, Object> context, List<ChatEntry> messages,
                            List<Event> events, List<Guardrail> guardrails, List<Operation> pendingOperations,
                            List<Map<String, Object>> agents, ServiceInsights insights, List<String> suggestedQuestions,
                            boolean humanRecommended, List<PolicyKnowledge.Lookup> knowledgeHistory,
-                           List<HumanSupport.Case> humanCases) {}
+                           List<HumanSupport.Case> humanCases, StreamingReply streamingReply) {}
 
     final String id = UUID.randomUUID().toString();
     final String ownerId;
@@ -52,6 +57,7 @@ public final class Conversation {
     String activeAgent = "triage";
     String runId;
     String runStatus = "IDLE";
+    StreamingReply streamingReply;
     long revision;
     long sequence;
     Instant touchedAt = Instant.now();
@@ -83,6 +89,6 @@ public final class Conversation {
                         .map(op -> new Operation(op.id(), op.tool(), BusinessTools.publicArguments(op.arguments()),
                                 op.booking(), op.expiresAt())).toList(),
                 catalog.metadata(), insights, List.copyOf(suggestedQuestions), humanRecommended,
-                List.copyOf(knowledgeHistory), List.copyOf(humanCases));
+                List.copyOf(knowledgeHistory), List.copyOf(humanCases), streamingReply);
     }
 }
